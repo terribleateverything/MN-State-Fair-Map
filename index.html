@@ -397,12 +397,15 @@
   /* Pins */
   .mk {
     position: absolute;
-    transform: translate(-50%, -100%) scale(var(--pinS, 1));
+    transform: translate(calc(-50% + var(--ox, 0px)), calc(-100% + var(--oy, 0px))) scale(var(--pinS, 1));
     transform-origin: 50% 100%;
     transition: transform 0.1s;
     pointer-events: none;   /* container is not a target — the pin itself is */
     z-index: 5;
   }
+  .mk[data-stack] { z-index: calc(5 + var(--stack, 0)); }
+  .mk:hover[data-stack] { z-index: 55; }
+  .mk.sel { z-index: 60; }
   .mk .pinwr {
     transform-origin: 50% 100%;
   }
@@ -926,13 +929,43 @@
 
   // ---- Markers DOM ----
   var markerEls = [];
+  // Fan out markers that share the exact same (x,y) so stacked
+  // "inside building" spots are each visible/clickable instead of
+  // being hidden under the topmost pin of the stack.
+  function fanCoords(list){
+    var seen = {};
+    list.forEach(function(m, i){
+      if (m.x == null || m.y == null) return;
+      var k = m.x + "," + m.y;
+      (seen[k] = seen[k] || []).push({ m: m, i: i });
+    });
+    var fan = {
+      offsets: {},   // marker id -> {dx,dy} percentage offsets
+      z: {}          // marker id -> stack order (higher = on top)
+    };
+    Object.keys(seen).forEach(function(k){
+      var s = seen[k];
+      if (s.length < 2) return;
+      // Around-the-center ring so all stacked pins stay visible.
+      var n = s.length, R = 34, base = 90;
+      s.forEach(function(entry, j){
+        var ang = (base + j * (360 / n)) * Math.PI / 180;
+        fan.offsets[entry.m.id] = { dx: R * Math.cos(ang), dy: R * Math.sin(ang) };
+        fan.z[entry.m.id] = j;
+      });
+    });
+    return fan;
+  }
   function buildMarkers(){
+    var fan = fanCoords(DATA.markers);
     DATA.markers.forEach(function(m){
       var el = document.createElement("div");
       el.className = "mk";
       el.dataset.id = m.id;
+      var off = fan.offsets[m.id];
       el.style.left = px(m.x);
       el.style.top = py(m.y);
+      if (off) { el.style.setProperty("--ox", off.dx + "px"); el.style.setProperty("--oy", off.dy + "px"); el.setAttribute("data-stack", String(fan.z[m.id]||0)); el.style.setProperty("--stack", String(fan.z[m.id]||0)); }
       el.innerHTML = '<div class="pinwr"><div class="pin" style="background:' + catColor(m) + '"><span>' + catIco(m) + '</span></div>' +
                      '<div class="lbl">' + esc(m.name) + '</div></div>';
       el.addEventListener("click", function(ev){
